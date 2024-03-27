@@ -15,11 +15,11 @@ cursor = connection.cursor()
 
 BASE_URL = "https://us-central1-passion-fbe7a.cloudfunctions.net/dzn54vzyt5ga/"
 AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION")
-DATE = "2020-01-01"
+DATE = "2020_01_01"
 
 
 def save_installs_to_database(data: dict) -> None:
-    create_table_command = """CREATE TABLE IF NOT EXISTS installs (
+    create_table_command = f"""CREATE TABLE IF NOT EXISTS installs_{DATE} (
         install_time DATETIME,
         marketing_id TEXT,
         channel TEXT,
@@ -56,7 +56,7 @@ def save_installs_to_database(data: dict) -> None:
         country_numeric = record["numeric"]
         official_name = record["official_name"]
 
-        cursor.execute('''INSERT INTO installs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        cursor.execute(f"""INSERT INTO installs_{DATE} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                   (install_time, marketing_id, channel, medium, campaign, keyword, ad_content, ad_group,
                    landing_page, sex, alpha_2, alpha_3, flag, country_name, country_numeric, official_name))
 
@@ -64,21 +64,21 @@ def save_installs_to_database(data: dict) -> None:
 
 
 def fetch_installs_data_from_api() -> dict:
-    response = requests.get(BASE_URL + f"installs?date={DATE}", headers={"Authorization": AUTHORIZATION_TOKEN})
+    response = requests.get(BASE_URL + f"installs?date={DATE.replace('_', '-')}", headers={"Authorization": AUTHORIZATION_TOKEN})
     data = response.json()
     data["records"] = json.loads(data["records"])
     return data
 
 
 def get_installs_table():
-    print("Fetching events data")
+    print("Fetching installs data")
     data = fetch_installs_data_from_api()
     print("Saving installs data to DB")
     save_installs_to_database(data)
 
 
 def save_costs_to_database(data: List[str]) -> None:
-    create_table_command = """CREATE TABLE IF NOT EXISTS costs (
+    create_table_command = f"""CREATE TABLE IF NOT EXISTS costs_{DATE} (
         campaign TEXT,
         location TEXT,
         ad_group TEXT,
@@ -93,13 +93,13 @@ def save_costs_to_database(data: List[str]) -> None:
 
     for row in data:
         if row.strip():
-            cursor.execute("""INSERT INTO costs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", row.split(sep="\t"))
+            cursor.execute(f"""INSERT INTO costs_{DATE} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", row.split(sep="\t"))
     connection.commit()
 
 
 
 def fetch_costs_data_from_api() -> List[str]:
-    response = requests.get(BASE_URL + f"costs?date={DATE}&dimensions=location,campaign,channel,medium,keyword,ad_content,ad_group,landing_page", headers={"Authorization": AUTHORIZATION_TOKEN})
+    response = requests.get(BASE_URL + f"costs?date={DATE.replace('_', '-')}&dimensions=location,campaign,channel,medium,keyword,ad_content,ad_group,landing_page", headers={"Authorization": AUTHORIZATION_TOKEN})
     _, data = response.text.split(sep="\n", maxsplit=1)
     data = data.split(sep="\n")
     return data
@@ -119,7 +119,7 @@ def get_events_table() -> None:
     save_events_to_database(data)
 
 def save_events_to_database(data: List[dict]) -> None:
-    create_table_command = """CREATE TABLE IF NOT EXISTS user_parameters (
+    create_table_command = f"""CREATE TABLE IF NOT EXISTS user_params_{DATE} (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         os TEXT,
         brand TEXT,
@@ -139,7 +139,7 @@ def save_events_to_database(data: List[dict]) -> None:
         marketing_id TEXT
     );"""
     cursor.execute(create_table_command)
-    create_table_command = """CREATE TABLE IF NOT EXISTS events (
+    create_table_command = f"""CREATE TABLE IF NOT EXISTS events_{DATE} (
         user_id TEXT,
         alpha_2 TEXT,
         alpha_3 TEXT,
@@ -170,7 +170,7 @@ def save_events_to_database(data: List[dict]) -> None:
         browser TEXT NULL,
         install_store TEXT NULL,
         user_params INTEGER NULL,
-        FOREIGN KEY (user_params) REFERENCES user_parameters(id)
+        FOREIGN KEY (user_params) REFERENCES user_params_{DATE}(id)
     );"""
     cursor.execute(create_table_command)
 
@@ -197,7 +197,7 @@ def save_events_to_database(data: List[dict]) -> None:
             marketing_id = user_params["marketing_id"]
 
             cursor.execute(
-                """INSERT INTO user_parameters
+                f"""INSERT INTO user_params_{DATE}
                 (os, brand, model, model_number, specification, transaction_id,
                 campaign_name, source, medium, term, context, gclid, dclid,
                 srsltid, is_active_user, marketing_id)
@@ -206,7 +206,7 @@ def save_events_to_database(data: List[dict]) -> None:
                 campaign_name, source, medium, term, context, gclid, dclid,
                 srsltid, is_active_user, marketing_id)
             )
-            cursor.execute("SELECT MAX(id) FROM user_parameters")
+            cursor.execute(f"SELECT MAX(id) FROM user_params_{DATE}")
             last_id = cursor.fetchone()[0]
 
         user_id = row["user_id"]
@@ -242,7 +242,7 @@ def save_events_to_database(data: List[dict]) -> None:
         ).strftime("%H:%M:%S")
 
         cursor.execute(
-            """INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?,
+            f"""INSERT INTO events_{DATE} VALUES (?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (user_id, alpha_2, alpha_3, flag, country_name, country_numeric, official_name, operational_system, brand, model, model_number, specification, event_time, event_type, location, user_action_detail, session_number, localization_id, ga_session_id, value, state, engagement_time_msec, current_progress, event_origin, place, selection, analytics_storage, browser, install_store, last_id)
         )
@@ -251,7 +251,7 @@ def save_events_to_database(data: List[dict]) -> None:
 
 
 def fetch_events_data_from_api(next_page: str = "") -> List:
-    core_page = BASE_URL + f"events?date={DATE}"
+    core_page = BASE_URL + f"events?date={DATE.replace('_', '-')}"
 
     response = requests.get(core_page + next_page, headers={"Authorization": AUTHORIZATION_TOKEN})
     while response.text == "Error":
@@ -271,11 +271,11 @@ def fetch_events_data_from_api(next_page: str = "") -> List:
     return data["data"]
 
 
-#
 # # COSTS
 # get_costs_table()
 # # INSTALLS
 # get_installs_table()
-# # EVENTS
-# get_events_table()
+# EVENTS
+get_events_table()
+
 connection.close()
