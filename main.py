@@ -2,10 +2,10 @@ import io
 import json
 import requests
 import os
+import base64
 import datetime
 import pandas as pd
 import pyarrow.parquet as pq
-import schedule
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
 
@@ -158,10 +158,16 @@ def get_all_tables() -> None:
     print("Successfully saved events data to DB")
 
 
+def hello_pubsub(event, context):
+    """Triggered from a message on a Cloud Pub/Sub topic.
+    Args:
+         event (dict): Event payload.
+         context (google.cloud.functions.Context): Metadata for the event.
+    """
+    pubsub_message = base64.b64decode(event['data']).decode('utf-8')
+    print(pubsub_message)
+    get_all_tables()
+
+
 if __name__ == "__main__":
-    try:
-        schedule.every().day.at(SCHEDULE_TIME).do(get_all_tables)
-        while True:
-            schedule.run_pending()
-    finally:
-        connection.close()
+    hello_pubsub("data", "context")
