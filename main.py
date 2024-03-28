@@ -1,13 +1,13 @@
 import io
 import json
 import requests
-from dotenv import load_dotenv
 import os
 import datetime
 import pandas as pd
 import pyarrow.parquet as pq
 import schedule
 from sqlalchemy import create_engine
+from dotenv import load_dotenv
 
 
 load_dotenv()
@@ -27,7 +27,7 @@ SCHEDULE_TIME = "17:53"
 def fetch_installs_data_from_api(date: str) -> pd.DataFrame:
     response = requests.get(
         BASE_URL + f"installs?date={date.replace('_', '-')}",
-        headers={"Authorization": AUTHORIZATION_TOKEN}
+        headers={"Authorization": AUTHORIZATION_TOKEN},
     )
     data = response.json()
     data = json.loads(data["records"])
@@ -38,15 +38,16 @@ def fetch_installs_data_from_api(date: str) -> pd.DataFrame:
 def fetch_costs_data_from_api(date: str) -> pd.DataFrame:
     response = requests.get(
         BASE_URL + f"costs?date={date.replace('_', '-')}"
-                   f"&dimensions=location,campaign,channel,medium,"
-                   f"keyword,ad_content,ad_group,landing_page",
-        headers={"Authorization": AUTHORIZATION_TOKEN})
+        f"&dimensions=location,campaign,channel,medium,"
+        f"keyword,ad_content,ad_group,landing_page",
+        headers={"Authorization": AUTHORIZATION_TOKEN},
+    )
     rows = response.content.split(b"\n")
     columns = rows[0].split(b"\t")
 
     data = []
 
-    if rows[-1] == b'':
+    if rows[-1] == b"":
         rows = rows[:-1]
 
     for row in rows[1:]:
@@ -66,13 +67,12 @@ def fetch_events_data_from_api(date: str, next_page: str = "") -> pd.DataFrame:
     core_page = BASE_URL + f"events?date={date.replace('_', '-')}"
 
     response = requests.get(
-        core_page + next_page,
-        headers={"Authorization": AUTHORIZATION_TOKEN}
+        core_page + next_page, headers={"Authorization": AUTHORIZATION_TOKEN}
     )
     while response.text == "Error":
         response = requests.get(
             core_page + next_page,
-            headers={"Authorization": AUTHORIZATION_TOKEN}
+            headers={"Authorization": AUTHORIZATION_TOKEN},
         )
 
     data = response.json()
@@ -80,8 +80,7 @@ def fetch_events_data_from_api(date: str, next_page: str = "") -> pd.DataFrame:
     next_page_df = pd.DataFrame()
     if next_page:
         next_page_df = fetch_events_data_from_api(
-            date,
-            f"&next_page={next_page}"
+            date, f"&next_page={next_page}"
         )
 
     data["data"] = json.loads(data["data"])
@@ -92,8 +91,10 @@ def fetch_events_data_from_api(date: str, next_page: str = "") -> pd.DataFrame:
 
 
 def fetch_orders_data_from_api(date: str) -> pd.DataFrame:
-    response = requests.get(BASE_URL + f"orders?date={date.replace('_', '-')}",
-                            headers={"Authorization": AUTHORIZATION_TOKEN})
+    response = requests.get(
+        BASE_URL + f"orders?date={date.replace('_', '-')}",
+        headers={"Authorization": AUTHORIZATION_TOKEN},
+    )
 
     parquet_content = response.content
     parquet_file = io.BytesIO(parquet_content)
@@ -104,30 +105,27 @@ def fetch_orders_data_from_api(date: str) -> pd.DataFrame:
 
 def save_tables_to_database(df: pd.DataFrame, table_names: tuple) -> None:
     if len(table_names) == 2:
-        user_params_df = pd.json_normalize(df['user_params'])
+        user_params_df = pd.json_normalize(df["user_params"])
 
-        df.drop(columns=['user_params'], inplace=True)
+        df.drop(columns=["user_params"], inplace=True)
 
-        df['user_params'] = range(1, len(df) + 1)
+        df["user_params"] = range(1, len(df) + 1)
         user_params_df.to_sql(
             name=table_names[1],
             con=connection,
-            if_exists='replace',
-            index=False
+            if_exists="replace",
+            index=False,
         )
     df.to_sql(
-        name=table_names[0],
-        con=connection,
-        if_exists='replace',
-        index=False
+        name=table_names[0], con=connection, if_exists="replace", index=False
     )
 
 
 def get_all_tables() -> None:
     print("Starting fetching all the data")
-    date = (
-        datetime.date.today() - datetime.timedelta(days=1)
-    ).strftime("%Y_%m_%d")
+    date = (datetime.date.today() - datetime.timedelta(days=1)).strftime(
+        "%Y_%m_%d"
+    )
 
     print(date)
 
@@ -142,14 +140,14 @@ def get_all_tables() -> None:
     print("Fetching costs data")
     df = fetch_costs_data_from_api(date)
     print("Saving costs data to DB")
-    save_tables_to_database(df, (f"costs_{date}", ))
+    save_tables_to_database(df, (f"costs_{date}",))
     print("Successfully saved costs data to DB")
 
     # INSTALLS
     print("Fetching installs data")
     df = fetch_installs_data_from_api(date)
     print("Saving installs data to DB")
-    save_tables_to_database(df, (f"installs_{date}", ))
+    save_tables_to_database(df, (f"installs_{date}",))
     print("Successfully saved costs data to DB")
 
     # EVENTS
@@ -160,7 +158,7 @@ def get_all_tables() -> None:
     print("Successfully saved events data to DB")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         schedule.every().day.at(SCHEDULE_TIME).do(get_all_tables)
         while True:
