@@ -32,6 +32,68 @@ def drop_if_exists(table_name: str) -> None:
         cursor.execute(f"DROP TABLE {table_name};")
 
 
+def fetch_installs_data_from_api(date: str) -> dict:
+    response = requests.get(
+        BASE_URL + f"installs?date={date.replace('_', '-')}",
+        headers={"Authorization": AUTHORIZATION_TOKEN}
+    )
+    data = response.json()
+    data["records"] = json.loads(data["records"])
+    return data
+
+
+def fetch_costs_data_from_api(date: str) -> List[str]:
+    response = requests.get(
+        BASE_URL + f"costs?date={date.replace('_', '-')}"
+                   f"&dimensions=location,campaign,channel,medium,"
+                   f"keyword,ad_content,ad_group,landing_page",
+        headers={"Authorization": AUTHORIZATION_TOKEN})
+    _, data = response.text.split(sep="\n", maxsplit=1)
+    data = data.split(sep="\n")
+    return data
+
+
+def fetch_events_data_from_api(date: str, next_page: str = "") -> List:
+    core_page = BASE_URL + f"events?date={date.replace('_', '-')}"
+
+    response = requests.get(
+        core_page + next_page,
+        headers={"Authorization": AUTHORIZATION_TOKEN}
+    )
+    while response.text == "Error":
+        response = requests.get(
+            core_page + next_page,
+            headers={"Authorization": AUTHORIZATION_TOKEN}
+        )
+
+    data = response.json()
+    next_page = data.get("next_page")
+    next_page_data = None
+    if next_page:
+        next_page_data = fetch_events_data_from_api(
+            date,
+            f"&next_page={next_page}"
+        )
+
+    data["data"] = json.loads(data["data"])
+
+    if next_page_data:
+        data["data"] += next_page_data
+
+    return data["data"]
+
+
+def fetch_orders_data_from_api(date: str) -> pd.DataFrame:
+    response = requests.get(BASE_URL + f"orders?date={date.replace('_', '-')}",
+                            headers={"Authorization": AUTHORIZATION_TOKEN})
+
+    parquet_content = response.content
+    parquet_file = io.BytesIO(parquet_content)
+    parquet_table = pq.read_table(parquet_file)
+
+    return parquet_table.to_pandas()
+
+
 def save_installs_to_database(data: dict, date: str) -> None:
     table_name = f"installs_{date}"
     drop_if_exists(table_name)
@@ -87,24 +149,6 @@ def save_installs_to_database(data: dict, date: str) -> None:
     connection.commit()
 
 
-def fetch_installs_data_from_api(date: str) -> dict:
-    response = requests.get(
-        BASE_URL + f"installs?date={date.replace('_', '-')}",
-        headers={"Authorization": AUTHORIZATION_TOKEN}
-    )
-    data = response.json()
-    data["records"] = json.loads(data["records"])
-    return data
-
-
-def get_installs_table(date: datetime):
-    print("Fetching installs data")
-    data = fetch_installs_data_from_api(date)
-    print("Saving installs data to DB")
-    save_installs_to_database(data, date)
-    print("Successfully saved installs data to DB")
-
-
 def save_costs_to_database(data: List[str], date: str) -> None:
     table_name = f"costs_{date}"
     drop_if_exists(table_name)
@@ -126,34 +170,8 @@ def save_costs_to_database(data: List[str], date: str) -> None:
         if row.strip():
             cursor.execute(f"""INSERT INTO {table_name} VALUES
              (?, ?, ?, ?, ?, ?, ?, ?, ?)""", row.split(sep="\t"))
+
     connection.commit()
-
-
-def fetch_costs_data_from_api(date: str) -> List[str]:
-    response = requests.get(
-        BASE_URL + f"costs?date={date.replace('_', '-')}"
-                   f"&dimensions=location,campaign,channel,medium,"
-                   f"keyword,ad_content,ad_group,landing_page",
-        headers={"Authorization": AUTHORIZATION_TOKEN})
-    _, data = response.text.split(sep="\n", maxsplit=1)
-    data = data.split(sep="\n")
-    return data
-
-
-def get_costs_table(date: str) -> None:
-    print("Fetching costs data")
-    data = fetch_costs_data_from_api(date)
-    print("Saving costs data to DB")
-    save_costs_to_database(data, date)
-    print("Successfully saved costs data to DB")
-
-
-def get_events_table(date: str) -> None:
-    print("Fetching events data")
-    data = fetch_events_data_from_api(date)
-    print("Saving events data to DB")
-    save_events_to_database(data, date)
-    print("Successfully saved events data to DB")
 
 
 def save_events_to_database(data: List[dict], date: str) -> None:
@@ -306,47 +324,6 @@ def save_events_to_database(data: List[dict], date: str) -> None:
     connection.commit()
 
 
-def fetch_events_data_from_api(date: str, next_page: str = "") -> List:
-    core_page = BASE_URL + f"events?date={date.replace('_', '-')}"
-
-    response = requests.get(
-        core_page + next_page,
-        headers={"Authorization": AUTHORIZATION_TOKEN}
-    )
-    while response.text == "Error":
-        response = requests.get(
-            core_page + next_page,
-            headers={"Authorization": AUTHORIZATION_TOKEN}
-        )
-
-    data = response.json()
-    next_page = data.get("next_page")
-    next_page_data = None
-    if next_page:
-        next_page_data = fetch_events_data_from_api(
-            date,
-            f"&next_page={next_page}"
-        )
-
-    data["data"] = json.loads(data["data"])
-
-    if next_page_data:
-        data["data"] += next_page_data
-
-    return data["data"]
-
-
-def fetch_orders_data_from_api(date: str) -> pd.DataFrame:
-    response = requests.get(BASE_URL + f"orders?date={date.replace('_', '-')}",
-                            headers={"Authorization": AUTHORIZATION_TOKEN})
-
-    parquet_content = response.content
-    parquet_file = io.BytesIO(parquet_content)
-    parquet_table = pq.read_table(parquet_file)
-
-    return parquet_table.to_pandas()
-
-
 def save_orders_to_database(df: pd.DataFrame, date: str) -> None:
     table_name = f"orders_{date}"
     df.to_sql(
@@ -355,6 +332,30 @@ def save_orders_to_database(df: pd.DataFrame, date: str) -> None:
         if_exists='replace',
         index=False
     )
+
+
+def get_costs_table(date: str) -> None:
+    print("Fetching costs data")
+    data = fetch_costs_data_from_api(date)
+    print("Saving costs data to DB")
+    save_costs_to_database(data, date)
+    print("Successfully saved costs data to DB")
+
+
+def get_installs_table(date: datetime):
+    print("Fetching installs data")
+    data = fetch_installs_data_from_api(date)
+    print("Saving installs data to DB")
+    save_installs_to_database(data, date)
+    print("Successfully saved installs data to DB")
+
+
+def get_events_table(date: str) -> None:
+    print("Fetching events data")
+    data = fetch_events_data_from_api(date)
+    print("Saving events data to DB")
+    save_events_to_database(data, date)
+    print("Successfully saved events data to DB")
 
 
 def get_orders_table(date: str) -> None:
