@@ -22,7 +22,10 @@ AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION")
 
 
 def drop_if_exists(table_name: str) -> None:
-    cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table_name,))
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?;",
+        (table_name,)
+    )
     result = cursor.fetchone()
     if result:
         print("Dropping existing table")
@@ -52,7 +55,9 @@ def save_installs_to_database(data: dict, date: str) -> None:
     );"""
     cursor.execute(create_table_command)
     for record in data["records"]:
-        install_time = datetime.datetime.strptime(record["install_time"], "%Y-%m-%dT%H:%M:%S.%f")
+        install_time = datetime.datetime.strptime(
+            record["install_time"], "%Y-%m-%dT%H:%M:%S.%f"
+        )
         marketing_id = record["marketing_id"]
         channel = record["channel"]
         medium = record["medium"]
@@ -69,16 +74,24 @@ def save_installs_to_database(data: dict, date: str) -> None:
         country_numeric = record["numeric"]
         official_name = record["official_name"]
 
-        cursor.execute(f"""INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                  (install_time, marketing_id, channel, medium, campaign, keyword, ad_content, ad_group,
-                   landing_page, sex, alpha_2, alpha_3, flag, country_name, country_numeric, official_name))
+        cursor.execute(
+            f"""INSERT INTO {table_name} VALUES
+             (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                install_time, marketing_id, channel, medium, campaign, keyword,
+                ad_content, ad_group, landing_page, sex, alpha_2, alpha_3,
+                flag, country_name, country_numeric, official_name
+            )
+        )
 
     connection.commit()
 
 
 def fetch_installs_data_from_api(date: str) -> dict:
-    response = requests.get(BASE_URL + f"installs?date={date.replace('_', '-')}",
-                            headers={"Authorization": AUTHORIZATION_TOKEN})
+    response = requests.get(
+        BASE_URL + f"installs?date={date.replace('_', '-')}",
+        headers={"Authorization": AUTHORIZATION_TOKEN}
+    )
     data = response.json()
     data["records"] = json.loads(data["records"])
     return data
@@ -111,13 +124,17 @@ def save_costs_to_database(data: List[str], date: str) -> None:
 
     for row in data:
         if row.strip():
-            cursor.execute(f"""INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", row.split(sep="\t"))
+            cursor.execute(f"""INSERT INTO {table_name} VALUES
+             (?, ?, ?, ?, ?, ?, ?, ?, ?)""", row.split(sep="\t"))
     connection.commit()
 
 
-
 def fetch_costs_data_from_api(date: str) -> List[str]:
-    response = requests.get(BASE_URL + f"costs?date={date.replace('_', '-')}&dimensions=location,campaign,channel,medium,keyword,ad_content,ad_group,landing_page", headers={"Authorization": AUTHORIZATION_TOKEN})
+    response = requests.get(
+        BASE_URL + f"costs?date={date.replace('_', '-')}"
+                   f"&dimensions=location,campaign,channel,medium,"
+                   f"keyword,ad_content,ad_group,landing_page",
+        headers={"Authorization": AUTHORIZATION_TOKEN})
     _, data = response.text.split(sep="\n", maxsplit=1)
     data = data.split(sep="\n")
     return data
@@ -143,7 +160,8 @@ def save_events_to_database(data: List[dict], date: str) -> None:
     user_params_table_name = f"user_params_{date}"
     drop_if_exists(user_params_table_name)
 
-    create_table_command = f"""CREATE TABLE IF NOT EXISTS {user_params_table_name} (
+    create_table_command = f"""CREATE TABLE IF NOT EXISTS
+     {user_params_table_name} (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         os TEXT,
         brand TEXT,
@@ -230,9 +248,12 @@ def save_events_to_database(data: List[dict], date: str) -> None:
                 campaign_name, source, medium, term, context, gclid, dclid,
                 srsltid, is_active_user, marketing_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (os, brand, model, model_number, specification, transaction_id,
-                campaign_name, source, medium, term, context, gclid, dclid,
-                srsltid, is_active_user, marketing_id)
+                (
+                    os, brand, model, model_number, specification,
+                    transaction_id, campaign_name, source, medium,
+                    term, context, gclid, dclid, srsltid,
+                    is_active_user, marketing_id
+                )
             )
             cursor.execute(f"SELECT MAX(id) FROM {user_params_table_name}")
             last_id = cursor.fetchone()[0]
@@ -270,9 +291,16 @@ def save_events_to_database(data: List[dict], date: str) -> None:
         ).strftime("%H:%M:%S")
 
         cursor.execute(
-            f"""INSERT INTO {events_table_name} VALUES (?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, alpha_2, alpha_3, flag, country_name, country_numeric, official_name, operational_system, brand, model, model_number, specification, event_time, event_type, location, user_action_detail, session_number, localization_id, ga_session_id, value, state, engagement_time_msec, current_progress, event_origin, place, selection, analytics_storage, browser, install_store, last_id)
+            f"""INSERT INTO {events_table_name} VALUES
+             (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, alpha_2, alpha_3, flag, country_name,
+             country_numeric, official_name, operational_system, brand,
+             model, model_number, specification, event_time, event_type,
+             location, user_action_detail, session_number, localization_id,
+             ga_session_id, value, state, engagement_time_msec,
+             current_progress, event_origin, place, selection,
+             analytics_storage, browser, install_store, last_id)
         )
 
     connection.commit()
@@ -281,15 +309,24 @@ def save_events_to_database(data: List[dict], date: str) -> None:
 def fetch_events_data_from_api(date: str, next_page: str = "") -> List:
     core_page = BASE_URL + f"events?date={date.replace('_', '-')}"
 
-    response = requests.get(core_page + next_page, headers={"Authorization": AUTHORIZATION_TOKEN})
+    response = requests.get(
+        core_page + next_page,
+        headers={"Authorization": AUTHORIZATION_TOKEN}
+    )
     while response.text == "Error":
-        response = requests.get(core_page + next_page, headers={"Authorization": AUTHORIZATION_TOKEN})
+        response = requests.get(
+            core_page + next_page,
+            headers={"Authorization": AUTHORIZATION_TOKEN}
+        )
 
     data = response.json()
     next_page = data.get("next_page")
     next_page_data = None
     if next_page:
-        next_page_data = fetch_events_data_from_api(date, f"&next_page={next_page}")
+        next_page_data = fetch_events_data_from_api(
+            date,
+            f"&next_page={next_page}"
+        )
 
     data["data"] = json.loads(data["data"])
 
@@ -312,7 +349,12 @@ def fetch_orders_data_from_api(date: str) -> pd.DataFrame:
 
 def save_orders_to_database(df: pd.DataFrame, date: str) -> None:
     table_name = f"orders_{date}"
-    df.to_sql(name=table_name, con=connection, if_exists='replace', index=False)
+    df.to_sql(
+        name=table_name,
+        con=connection,
+        if_exists='replace',
+        index=False
+    )
 
 
 def get_orders_table(date: str) -> None:
@@ -325,7 +367,9 @@ def get_orders_table(date: str) -> None:
 
 def get_all_tables() -> None:
     print("Starting fetching all the data")
-    date = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y_%m_%d")
+    date = (
+        datetime.date.today() - datetime.timedelta(days=1)
+    ).strftime("%Y_%m_%d")
     print(date)
     # COSTS
     get_costs_table(date)
@@ -335,8 +379,6 @@ def get_all_tables() -> None:
     get_events_table(date)
     # ORDERS
     get_orders_table(date)
-
-
 
 
 if __name__ == '__main__':
