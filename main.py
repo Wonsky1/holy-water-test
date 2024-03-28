@@ -5,11 +5,11 @@ import requests
 from dotenv import load_dotenv
 import os
 import sqlite3
-from datetime import datetime
+import datetime
 from typing import List
 import pandas as pd
 import pyarrow.parquet as pq
-
+import schedule
 
 
 load_dotenv()
@@ -19,7 +19,6 @@ cursor = connection.cursor()
 
 BASE_URL = "https://us-central1-passion-fbe7a.cloudfunctions.net/dzn54vzyt5ga/"
 AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION")
-DATE = "2020_01_01"
 
 
 def drop_if_exists(table_name: str) -> None:
@@ -29,8 +28,9 @@ def drop_if_exists(table_name: str) -> None:
         print("Dropping existing table")
         cursor.execute(f"DROP TABLE {table_name};")
 
-def save_installs_to_database(data: dict) -> None:
-    table_name = f"installs_{DATE}"
+
+def save_installs_to_database(data: dict, date: str) -> None:
+    table_name = f"installs_{date}"
     drop_if_exists(table_name)
     create_table_command = f"""CREATE TABLE {table_name} (
         install_time DATETIME,
@@ -52,7 +52,7 @@ def save_installs_to_database(data: dict) -> None:
     );"""
     cursor.execute(create_table_command)
     for record in data["records"]:
-        install_time = datetime.strptime(record["install_time"], "%Y-%m-%dT%H:%M:%S.%f")
+        install_time = datetime.datetime.strptime(record["install_time"], "%Y-%m-%dT%H:%M:%S.%f")
         marketing_id = record["marketing_id"]
         channel = record["channel"]
         medium = record["medium"]
@@ -76,23 +76,24 @@ def save_installs_to_database(data: dict) -> None:
     connection.commit()
 
 
-def fetch_installs_data_from_api() -> dict:
-    response = requests.get(BASE_URL + f"installs?date={DATE.replace('_', '-')}", headers={"Authorization": AUTHORIZATION_TOKEN})
+def fetch_installs_data_from_api(date: str) -> dict:
+    response = requests.get(BASE_URL + f"installs?date={date.replace('_', '-')}",
+                            headers={"Authorization": AUTHORIZATION_TOKEN})
     data = response.json()
     data["records"] = json.loads(data["records"])
     return data
 
 
-def get_installs_table():
+def get_installs_table(date: datetime):
     print("Fetching installs data")
-    data = fetch_installs_data_from_api()
+    data = fetch_installs_data_from_api(date)
     print("Saving installs data to DB")
-    save_installs_to_database(data)
+    save_installs_to_database(data, date)
     print("Successfully saved installs data to DB")
 
 
-def save_costs_to_database(data: List[str]) -> None:
-    table_name = f"costs_{DATE}"
+def save_costs_to_database(data: List[str], date: str) -> None:
+    table_name = f"costs_{date}"
     drop_if_exists(table_name)
 
     create_table_command = f"""CREATE TABLE IF NOT EXISTS {table_name} (
@@ -115,29 +116,31 @@ def save_costs_to_database(data: List[str]) -> None:
 
 
 
-def fetch_costs_data_from_api() -> List[str]:
-    response = requests.get(BASE_URL + f"costs?date={DATE.replace('_', '-')}&dimensions=location,campaign,channel,medium,keyword,ad_content,ad_group,landing_page", headers={"Authorization": AUTHORIZATION_TOKEN})
+def fetch_costs_data_from_api(date: str) -> List[str]:
+    response = requests.get(BASE_URL + f"costs?date={date.replace('_', '-')}&dimensions=location,campaign,channel,medium,keyword,ad_content,ad_group,landing_page", headers={"Authorization": AUTHORIZATION_TOKEN})
     _, data = response.text.split(sep="\n", maxsplit=1)
     data = data.split(sep="\n")
     return data
 
 
-def get_costs_table() -> None:
+def get_costs_table(date: str) -> None:
     print("Fetching costs data")
-    data = fetch_costs_data_from_api()
+    data = fetch_costs_data_from_api(date)
     print("Saving costs data to DB")
-    save_costs_to_database(data)
+    save_costs_to_database(data, date)
     print("Successfully saved costs data to DB")
 
-def get_events_table() -> None:
+
+def get_events_table(date: str) -> None:
     print("Fetching events data")
-    data = fetch_events_data_from_api()
+    data = fetch_events_data_from_api(date)
     print("Saving events data to DB")
-    save_events_to_database(data)
+    save_events_to_database(data, date)
     print("Successfully saved events data to DB")
 
-def save_events_to_database(data: List[dict]) -> None:
-    user_params_table_name = f"user_params_{DATE}"
+
+def save_events_to_database(data: List[dict], date: str) -> None:
+    user_params_table_name = f"user_params_{date}"
     drop_if_exists(user_params_table_name)
 
     create_table_command = f"""CREATE TABLE IF NOT EXISTS {user_params_table_name} (
@@ -161,7 +164,7 @@ def save_events_to_database(data: List[dict]) -> None:
     );"""
     cursor.execute(create_table_command)
 
-    events_table_name = f"events_{DATE}"
+    events_table_name = f"events_{date}"
     drop_if_exists(events_table_name)
 
     create_table_command = f"""CREATE TABLE IF NOT EXISTS {events_table_name} (
@@ -262,7 +265,7 @@ def save_events_to_database(data: List[dict]) -> None:
         analytics_storage = row["analytics_storage"]
         browser = row["browser"]
         install_store = row["install_store"]
-        event_time = datetime.fromtimestamp(
+        event_time = datetime.datetime.fromtimestamp(
             row["event_time"] / 1000
         ).strftime("%H:%M:%S")
 
@@ -275,8 +278,8 @@ def save_events_to_database(data: List[dict]) -> None:
     connection.commit()
 
 
-def fetch_events_data_from_api(next_page: str = "") -> List:
-    core_page = BASE_URL + f"events?date={DATE.replace('_', '-')}"
+def fetch_events_data_from_api(date: str, next_page: str = "") -> List:
+    core_page = BASE_URL + f"events?date={date.replace('_', '-')}"
 
     response = requests.get(core_page + next_page, headers={"Authorization": AUTHORIZATION_TOKEN})
     while response.text == "Error":
@@ -286,7 +289,7 @@ def fetch_events_data_from_api(next_page: str = "") -> List:
     next_page = data.get("next_page")
     next_page_data = None
     if next_page:
-        next_page_data = fetch_events_data_from_api(f"&next_page={next_page}")
+        next_page_data = fetch_events_data_from_api(date, f"&next_page={next_page}")
 
     data["data"] = json.loads(data["data"])
 
@@ -296,8 +299,8 @@ def fetch_events_data_from_api(next_page: str = "") -> List:
     return data["data"]
 
 
-def fetch_orders_data_from_api() -> pd.DataFrame:
-    response = requests.get(BASE_URL + f"orders?date={DATE.replace('_', '-')}",
+def fetch_orders_data_from_api(date: str) -> pd.DataFrame:
+    response = requests.get(BASE_URL + f"orders?date={date.replace('_', '-')}",
                             headers={"Authorization": AUTHORIZATION_TOKEN})
 
     parquet_content = response.content
@@ -307,26 +310,39 @@ def fetch_orders_data_from_api() -> pd.DataFrame:
     return parquet_table.to_pandas()
 
 
-def save_orders_to_database(df: pd.DataFrame) -> None:
-    table_name = f"orders_{DATE}"
+def save_orders_to_database(df: pd.DataFrame, date: str) -> None:
+    table_name = f"orders_{date}"
     df.to_sql(name=table_name, con=connection, if_exists='replace', index=False)
 
 
-def get_orders_table() -> None:
+def get_orders_table(date: str) -> None:
     print("Fetching orders data")
-    df = fetch_orders_data_from_api()
+    df = fetch_orders_data_from_api(date)
     print("Saving orders data to DB")
-    save_orders_to_database(df)
+    save_orders_to_database(df, date)
     print("Successfully saved orders data to DB")
 
 
-# COSTS
-get_costs_table()
-# INSTALLS
-get_installs_table()
-# EVENTS
-get_events_table()
-# ORDERS
-get_orders_table()
+def get_all_tables() -> None:
+    print("Starting fetching all the data")
+    date = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y_%m_%d")
+    print(date)
+    # COSTS
+    get_costs_table(date)
+    # INSTALLS
+    get_installs_table(date)
+    # EVENTS
+    get_events_table(date)
+    # ORDERS
+    get_orders_table(date)
 
-connection.close()
+
+
+
+if __name__ == '__main__':
+    try:
+        schedule.every().day.at("10:00").do(get_all_tables)
+        while True:
+            schedule.run_pending()
+    finally:
+        connection.close()
