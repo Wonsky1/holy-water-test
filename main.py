@@ -241,7 +241,7 @@ def get_all_tables() -> None:
     print("Saving events data to DB")
     events_df, user_params_df = get_events_and_user_params_frames(events_df)
     save_table_to_database(events_df, f"events_{date}")
-    save_table_to_database(user_params_df, f"events_{date}")
+    save_table_to_database(user_params_df, f"user_params_{date}")
     print("Successfully saved events data to DB")
 
     # ORDERS
