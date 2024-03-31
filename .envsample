@@ -1,0 +1,2 @@
+AUTHORIZATION=AUTHORIZATION
+CONN_STRING=postgres://user:password@host/data1
