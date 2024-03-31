@@ -31,7 +31,6 @@ def get_response_without_error(
 ) -> requests.Response:
     response = requests.get(url=url, headers=headers)
     while response.text == "Error":
-        print(response.text)
         response = requests.get(url=url, headers=headers)
 
     return response
