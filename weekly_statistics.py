@@ -14,8 +14,6 @@ load_dotenv()
 db = create_engine(os.getenv("CONN_STRING"))
 connection = db.connect()
 
-SCHEDULE_TIME = "10:00"
-
 
 def get_available_tables() -> list:
     metadata = MetaData()
