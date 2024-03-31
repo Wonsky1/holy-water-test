@@ -26,10 +26,20 @@ AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION")
 SCHEDULE_TIME = "10:00"
 
 
+def get_response_without_error(
+    url: str, headers: dict = {"Authorization": AUTHORIZATION_TOKEN}
+) -> requests.Response:
+    response = requests.get(url=url, headers=headers)
+    while response.text == "Error":
+        print(response.text)
+        response = requests.get(url=url, headers=headers)
+
+    return response
+
+
 def fetch_installs_data_from_api(date: str) -> pd.DataFrame:
-    response = requests.get(
+    response = get_response_without_error(
         BASE_URL + f"installs?date={date.replace('_', '-')}",
-        headers={"Authorization": AUTHORIZATION_TOKEN},
     )
     data = response.json()
     data = json.loads(data["records"])
@@ -38,11 +48,10 @@ def fetch_installs_data_from_api(date: str) -> pd.DataFrame:
 
 
 def fetch_costs_data_from_api(date: str) -> pd.DataFrame:
-    response = requests.get(
+    response = get_response_without_error(
         BASE_URL + f"costs?date={date.replace('_', '-')}"
         f"&dimensions=location,campaign,channel,medium,"
-        f"keyword,ad_content,ad_group,landing_page",
-        headers={"Authorization": AUTHORIZATION_TOKEN},
+        f"keyword,ad_content,ad_group,landing_page"
     )
     rows = response.content.split(b"\n")
     columns = rows[0].split(b"\t")
@@ -69,14 +78,7 @@ def fetch_costs_data_from_api(date: str) -> pd.DataFrame:
 def fetch_events_data_from_api(date: str, next_page: str = "") -> pd.DataFrame:
     core_page = BASE_URL + f"events?date={date.replace('_', '-')}"
 
-    response = requests.get(
-        core_page + next_page, headers={"Authorization": AUTHORIZATION_TOKEN}
-    )
-    while response.text == "Error":
-        response = requests.get(
-            core_page + next_page,
-            headers={"Authorization": AUTHORIZATION_TOKEN},
-        )
+    response = get_response_without_error(core_page + next_page)
 
     data = response.json()
     next_page = data.get("next_page")
@@ -94,9 +96,8 @@ def fetch_events_data_from_api(date: str, next_page: str = "") -> pd.DataFrame:
 
 
 def fetch_orders_data_from_api(date: str) -> pd.DataFrame:
-    response = requests.get(
+    response = get_response_without_error(
         BASE_URL + f"orders?date={date.replace('_', '-')}",
-        headers={"Authorization": AUTHORIZATION_TOKEN},
     )
 
     parquet_content = response.content
@@ -147,7 +148,9 @@ def get_cpi_data_frame(
         for value, count in counts.items():
             values_sum.append(costs_df[costs_df[field] == value]["cost"].sum())
         result = counts.to_frame()
+        result["total_amount_spent"] = values_sum
         result["cpi"] = values_sum / result["count"]
+        result.rename(columns={"count": "installs_count"}, inplace=True)
         result[field] = result.index
         dataframes.append(result)
 
