@@ -15,18 +15,30 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-db = create_engine(os.getenv("CONN_STRING"))
+conn_string = os.getenv("CONN_STRING")
+db = create_engine(conn_string)
 connection = db.connect()
 
 
 BASE_URL = "https://us-central1-passion-fbe7a.cloudfunctions.net/dzn54vzyt5ga/"
 AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION")
 
+SCHEDULE_TIME = "10:00"
+
+
+def get_response_without_error(
+    url: str, headers: dict = {"Authorization": AUTHORIZATION_TOKEN}
+) -> requests.Response:
+    response = requests.get(url=url, headers=headers)
+    while response.text == "Error":
+        response = requests.get(url=url, headers=headers)
+
+    return response
+
 
 def fetch_installs_data_from_api(date: str) -> pd.DataFrame:
-    response = requests.get(
+    response = get_response_without_error(
         BASE_URL + f"installs?date={date.replace('_', '-')}",
-        headers={"Authorization": AUTHORIZATION_TOKEN},
     )
     data = response.json()
     data = json.loads(data["records"])
@@ -35,11 +47,10 @@ def fetch_installs_data_from_api(date: str) -> pd.DataFrame:
 
 
 def fetch_costs_data_from_api(date: str) -> pd.DataFrame:
-    response = requests.get(
+    response = get_response_without_error(
         BASE_URL + f"costs?date={date.replace('_', '-')}"
         f"&dimensions=location,campaign,channel,medium,"
-        f"keyword,ad_content,ad_group,landing_page",
-        headers={"Authorization": AUTHORIZATION_TOKEN},
+        f"keyword,ad_content,ad_group,landing_page"
     )
     rows = response.content.split(b"\n")
     columns = rows[0].split(b"\t")
@@ -66,14 +77,7 @@ def fetch_costs_data_from_api(date: str) -> pd.DataFrame:
 def fetch_events_data_from_api(date: str, next_page: str = "") -> pd.DataFrame:
     core_page = BASE_URL + f"events?date={date.replace('_', '-')}"
 
-    response = requests.get(
-        core_page + next_page, headers={"Authorization": AUTHORIZATION_TOKEN}
-    )
-    while response.text == "Error":
-        response = requests.get(
-            core_page + next_page,
-            headers={"Authorization": AUTHORIZATION_TOKEN},
-        )
+    response = get_response_without_error(core_page + next_page)
 
     data = response.json()
     next_page = data.get("next_page")
@@ -91,9 +95,8 @@ def fetch_events_data_from_api(date: str, next_page: str = "") -> pd.DataFrame:
 
 
 def fetch_orders_data_from_api(date: str) -> pd.DataFrame:
-    response = requests.get(
+    response = get_response_without_error(
         BASE_URL + f"orders?date={date.replace('_', '-')}",
-        headers={"Authorization": AUTHORIZATION_TOKEN},
     )
 
     parquet_content = response.content
@@ -118,7 +121,7 @@ def save_table_to_database(
     )
 
 
-def get_cpi_data_frames(
+def get_cpi_data_frame(
     costs_df: pd.DataFrame, installs_df: pd.DataFrame
 ) -> List[pd.DataFrame]:
 
@@ -144,7 +147,9 @@ def get_cpi_data_frames(
         for value, count in counts.items():
             values_sum.append(costs_df[costs_df[field] == value]["cost"].sum())
         result = counts.to_frame()
+        result["total_amount_spent"] = values_sum
         result["cpi"] = values_sum / result["count"]
+        result.rename(columns={"count": "installs_count"}, inplace=True)
         result[field] = result.index
         dataframes.append(result)
 
@@ -221,7 +226,7 @@ def get_all_tables() -> None:
     costs_df = fetch_costs_data_from_api(date)
 
     print("Saving costs data to DB")
-    cpi_dfs = get_cpi_data_frames(costs_df, installs_df)
+    cpi_dfs = get_cpi_data_frame(costs_df, installs_df)
     for cpi_df in cpi_dfs:
         save_table_to_database(
             cpi_df, f"cpi_{date}_{cpi_df.columns[-1]}", connection
@@ -236,7 +241,7 @@ def get_all_tables() -> None:
     print("Saving events data to DB")
     events_df, user_params_df = get_events_and_user_params_frames(events_df)
     save_table_to_database(events_df, f"events_{date}")
-    save_table_to_database(user_params_df, f"events_{date}")
+    save_table_to_database(user_params_df, f"user_params_{date}")
     print("Successfully saved events data to DB")
 
     # ORDERS
@@ -256,7 +261,7 @@ def hello_pubsub(event, context):
          event (dict): Event payload.
          context (google.cloud.functions.Context): Metadata for the event.
     """
-    pubsub_message = base64.b64decode(event['data']).decode('utf-8')
+    pubsub_message = base64.b64decode(event["data"]).decode("utf-8")
     print(pubsub_message)
     get_all_tables()
 
